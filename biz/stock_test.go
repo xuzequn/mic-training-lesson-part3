@@ -41,5 +41,11 @@ func TestStockService_SetStock(t *testing.T) {
 }
 
 func TestStockService_StockDetail(t *testing.T) {
-
+	r, err := client.StockDetail(context.Background(), &pb.ProductStockItem{
+		ProductID: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fmt.Println(r)
 }
