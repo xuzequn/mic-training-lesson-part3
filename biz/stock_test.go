@@ -9,6 +9,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"mic-training-lesson-part3/internal"
 	"mic-training-lesson-part3/proto/pb"
+	"sync"
 	"testing"
 )
 
@@ -48,4 +49,44 @@ func TestStockService_StockDetail(t *testing.T) {
 		t.Fatal(err)
 	}
 	fmt.Println(r)
+}
+
+var wg sync.WaitGroup
+
+func TestStockService_Sell(t *testing.T) {
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func() {
+			var itemList []*pb.ProductStockItem
+			item := &pb.ProductStockItem{
+				ProductID: 1,
+				Num:       1,
+			}
+			itemList = append(itemList, item)
+			sellItem := &pb.SellItem{
+				StockItemList: itemList,
+			}
+			res, err := client.Sell(context.Background(), sellItem)
+			if err != nil {
+				t.Fatal(err)
+			}
+			fmt.Println(res)
+			wg.Done()
+		}()
+	}
+	wg.Wait()
+}
+
+func TestStockService_BackStock(t *testing.T) {
+	var itemList []*pb.ProductStockItem
+	item := &pb.ProductStockItem{
+		ProductID: 1,
+		Num:       18,
+	}
+	itemList = append(itemList, item)
+	res, err := client.BackStock(context.Background(), &pb.SellItem{StockItemList: itemList})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fmt.Println(res)
 }

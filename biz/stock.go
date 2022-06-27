@@ -3,11 +3,13 @@ package biz
 import (
 	"context"
 	"github.com/go-errors/errors"
+	"go.uber.org/zap"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"mic-training-lesson-part3/custom_error"
 	"mic-training-lesson-part3/internal"
 	"mic-training-lesson-part3/model"
 	"mic-training-lesson-part3/proto/pb"
+	"sync"
 )
 
 type StockService struct {
@@ -49,14 +51,66 @@ func (s StockService) StockDetail(ctx context.Context, req *pb.ProductStockItem)
 	return &stockPb, nil
 }
 
+var m sync.Mutex
+
 func (s StockService) Sell(ctx context.Context, req *pb.SellItem) (*emptypb.Empty, error) {
-	//TODO implement me
-	panic("implement me")
+	tx := internal.DB.Begin() //  事务控制
+	//m.Lock()                  // 为了保证并发安全，添加并发互斥锁，但是性能差，如果100w人来竞争，考虑分布式锁
+	//defer m.Unlock()
+	for _, item := range req.StockItemList {
+		var stock model.Stock
+		// 乐观锁事务
+		for {
+			//r := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("product_id = ?", item.ProductID).First(&stock) // 悲观锁 独占锁
+			r := internal.DB.Where("product_id = ?", item.ProductID).First(&stock)
+			if r.RowsAffected == 0 {
+				tx.Rollback()
+				return nil, errors.New(custom_error.ProductNotFound)
+			}
+			if stock.Num < item.Num {
+				tx.Rollback()
+				return nil, errors.New(custom_error.StockNotEnough)
+			}
+			stock.Num -= item.Num
+			//tx.Save(&stock)
+			// update num = 88 and version = 1 where id =1 and version =0
+			//  更新选定字段，保证有零值。
+			r = tx.Where(&model.Stock{}).Select("num").Where("product_id=? and version = ?",
+				item.ProductID, stock.Version).Updates(model.Stock{
+				Num:     stock.Num,
+				Version: stock.Version + 1,
+			})
+			if r.RowsAffected == 0 {
+				zap.S().Info("扣减库存失败")
+			} else {
+				break
+			}
+		}
+	}
+	tx.Commit()
+	return &emptypb.Empty{}, nil
 }
 
 func (s StockService) BackStock(ctx context.Context, req *pb.SellItem) (*emptypb.Empty, error) {
-	//TODO implement me
-	panic("implement me")
+	/*
+		什么时候触发回滚？
+		超时怎么办？
+		定点创建失败？
+		手动归还
+	*/
+	tx := internal.DB.Begin()
+	for _, item := range req.StockItemList {
+		var stock model.Stock
+		r := internal.DB.Where("product_id=?", item.ProductID).First(&stock)
+		if r.RowsAffected < 1 {
+			tx.Rollback()
+			return nil, errors.New(custom_error.ProductNotFound)
+		}
+		stock.Num += item.Num
+		tx.Save(&stock)
+	}
+	tx.Commit()
+	return &emptypb.Empty{}, nil
 }
 func ConvertStockModel2pb(item model.Stock) pb.ProductStockItem {
 	return pb.ProductStockItem{
