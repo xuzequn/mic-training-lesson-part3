@@ -1,15 +1,22 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
+	"github.com/apache/rocketmq-client-go/v2"
+	"github.com/apache/rocketmq-client-go/v2/consumer"
+	"github.com/apache/rocketmq-client-go/v2/primitive"
 	uuid "github.com/satori/go.uuid"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/health/grpc_health_v1"
+	"gorm.io/gorm"
 	"mic-training-lesson-part3/biz"
 	"mic-training-lesson-part3/internal"
 	"mic-training-lesson-part3/internal/register"
+	"mic-training-lesson-part3/model"
 	"mic-training-lesson-part3/proto/pb"
 	"mic-training-lesson-part3/util"
 	"net"
@@ -62,7 +69,50 @@ func main() {
 		fmt.Println(err)
 	}
 	fmt.Println(fmt.Sprintf("%s启动在%d", randomId, port))
-
+	mqAddr := "127.0.0.1:9876"
+	pushConsumer, _ := rocketmq.NewPushConsumer(
+		consumer.WithNameServer([]string{mqAddr}),
+		consumer.WithGroupName("HappyStockGroup"),
+	)
+	pushConsumer.Subscribe("Happy_BackStockTopic", consumer.MessageSelector{},
+		func(ctx context.Context,
+			messageExt ...*primitive.MessageExt) (consumer.ConsumeResult, error) {
+			for i := range messageExt {
+				var order model.Order
+				err = json.Unmarshal(messageExt[i].Body, &order)
+				if err != nil {
+					zap.S().Error("Unmarshal Error:" + err.Error())
+					return consumer.ConsumeRetryLater, nil
+				}
+				tx := internal.DB.Begin()
+				var detail model.StockItemDetail
+				r := tx.Where(&model.StockItemDetail{
+					OrderNo: order.OrderNum,
+					Status:  model.HasSell,
+				}).First(&detail)
+				if r.RowsAffected < 1 {
+					return consumer.ConsumeSuccess, nil
+				}
+				for _, item := range detail.DetailList {
+					ret := tx.Model(&model.Stock{ProductId: item.ProductId}).Update(
+						"num", gorm.Expr("num+?", item.Num),
+					)
+					if ret.RowsAffected < 1 {
+						return consumer.ConsumeRetryLater, nil
+					}
+				}
+				result := tx.Model(&model.StockItemDetail{}).
+					Where(&model.StockItemDetail{OrderNo: order.OrderNum}).
+					Update("status", model.HasBack)
+				if result.RowsAffected < 1 {
+					tx.Rollback()
+					return consumer.ConsumeRetryLater, nil
+				}
+				tx.Commit()
+				return consumer.ConsumeSuccess, nil
+			}
+			return consumer.ConsumeSuccess, nil
+		})
 	//// 在consul 注册grpc 服务。
 	//// consul的相关配置
 	//defaultConfig := api.DefaultConfig()
