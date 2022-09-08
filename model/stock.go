@@ -31,7 +31,7 @@ func (p ProductDetailList) Scan(value interface{}) error {
 }
 
 type StockItemDetail struct {
-	OrderNo    string            `gorm:"type:varchar(128),index:order_no, unique"`
+	OrderNo    string            `gorm:"type:varchar(128);index:idx_order_no;unique"`
 	Status     OrderStatus       `gorm:"type:int"`
 	DetailList ProductDetailList `gorm:"type:varchar(128)"`
 }

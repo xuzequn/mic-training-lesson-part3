@@ -3,6 +3,7 @@ package internal
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/go-redsync/redsync/v4"
 	"github.com/nacos-group/nacos-sdk-go/clients"
 	"github.com/nacos-group/nacos-sdk-go/common/constant"
 	"github.com/nacos-group/nacos-sdk-go/vo"
@@ -11,6 +12,7 @@ import (
 
 var AppConf AppConfig
 var NacosConf NacosConfig
+var RedSync *redsync.Redsync
 
 //var ViperConf ViperConfig
 var fileName = "dev-config.yaml"
