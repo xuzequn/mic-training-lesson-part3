@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 	"github.com/go-errors/errors"
+	"github.com/go-redsync/redsync/v4"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"mic-training-lesson-part3/custom_error"
 	"mic-training-lesson-part3/internal"
 	"mic-training-lesson-part3/model"
 	"mic-training-lesson-part3/proto/pb"
 	"sync"
+	"time"
 )
 
 type StockService struct {
@@ -63,7 +65,7 @@ func (s StockService) Sell(ctx context.Context, req *pb.SellItem) (*emptypb.Empt
 		// 乐观锁事务
 
 		// 分布式锁
-		mutex := internal.RedSync.NewMutex(fmt.Sprintf("product_%d", item.ProductID))
+		mutex := internal.RedSync.NewMutex(fmt.Sprintf("product_%d", item.ProductID), redsync.WithExpiry(16*time.Second))
 		err := mutex.Lock()
 		if err != nil {
 			return nil, errors.New(custom_error.RedisLockErr)

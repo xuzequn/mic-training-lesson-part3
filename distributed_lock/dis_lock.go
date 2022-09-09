@@ -25,7 +25,7 @@ func RedisLock(wg *sync.WaitGroup) {
 	rs := redsync.New(pool)
 
 	mutexname := "product@1"
-	mutex := rs.NewMutex(mutexname)
+	mutex := rs.NewMutex(mutexname, redsync.WithExpiry(30*time.Second))
 	fmt.Println("Lock()....")
 	err := mutex.Lock()
 	if err != nil {
